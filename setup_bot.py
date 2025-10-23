@@ -54,17 +54,60 @@ BOT_MARKER = "[DSBOT]"  # Discord Server Bot marker
 # Known bot-created channel patterns (for legacy detection)
 # These are common patterns from templates that help identify bot-created channels
 BOT_CHANNEL_PATTERNS = [
+    # Core templates
     "welcome", "rules", "announcements", "resources", "roles",
     "general", "introductions", "off-topic", "showcase",
-    "ai-news", "research-papers", "ethics-safety", "industry-trends",
-    "general-dev", "llm-development", "ml-engineering", "computer-vision",
-    "openai-api", "anthropic-claude", "local-models",
-    "image-generation", "video-audio", "prompt-engineering",
-    "beginner-questions", "tutorials-guides", "study-group",
-    "hackathons-events", "job-opportunities", "networking",
-    "aws-alerts", "cloudwatch", "cost-optimization",
-    "incident-management", "change-management", "problem-management",
-    "homework-help", "general-academic", "mathematics", "science"
+    "ai-news", "research-papers", "ethics-safety", "industry-trends", "hot-takes",
+    "general-dev", "llm-development", "ml-engineering", "computer-vision", "agents-automation",
+    "code-review", "debugging-help",
+    "openai-api", "anthropic-claude", "local-models", "langchain-llamaindex",
+    "vector-databases", "devops-mlops",
+    "image-generation", "video-audio", "prompt-engineering", "creative-showcase",
+    "beginner-questions", "tutorials-guides", "study-group", "paper-reading-club", "project-ideas",
+    "hackathons-events", "job-opportunities", "networking", "collaborations",
+    "aws-alerts", "cloudwatch", "cost-optimization", "infrastructure", "deployments",
+    "incident-management", "change-management", "problem-management", "service-catalog",
+    # School template
+    "homework-help", "general-academic", "mathematics", "science", "english-literature",
+    "history-social-studies", "foreign-languages", "computer-science", "arts-music",
+    "physical-education", "study-groups", "exam-prep", "tutoring-help", "project-collaboration",
+    "class-schedules", "assignments", "grades-progress", "school-calendar",
+    "student-council", "clubs-activities", "sports-teams", "events-trips",
+    "cafeteria-menu", "library-resources", "tech-support",
+    # Small business template
+    "wins-celebrations", "water-cooler", "daily-standup", "projects", "tasks-todos", "deadlines",
+    "sales-marketing", "customer-support", "product-dev", "finance-admin", "hr-people-ops",
+    "metrics-kpis", "strategy", "feedback-ideas", "competitors",
+    "client-updates", "partnerships", "contracts",
+    "documentation", "training", "tools-software",
+    # Gaming template
+    "game-chat", "lfg-looking-for-group", "voice-chat-text", "clips-highlights",
+    "game-news", "patch-notes", "tournaments", "strategies-guides",
+    "pc-gaming", "console-gaming", "mobile-gaming", "retro-gaming",
+    "memes", "screenshots", "fan-art",
+    # Content creator template
+    "content-ideas", "feedback-review", "collaboration-requests", "upload-schedule",
+    "youtube", "twitch", "tiktok", "instagram", "twitter",
+    "video-editing", "thumbnail-design", "audio-mixing", "streaming-tech",
+    "analytics", "monetization", "sponsorships", "merch",
+    # Nonprofit template
+    "mission-vision", "volunteer-opportunities", "event-planning", "fundraising",
+    "donor-relations", "grant-writing", "community-outreach", "impact-stories",
+    # Fitness template
+    "workout-plans", "nutrition", "progress-pics", "accountability",
+    "cardio", "strength-training", "yoga-flexibility", "sports",
+    # Music/Band template
+    "practice-schedule", "setlist-planning", "song-ideas", "lyrics-writing",
+    "recording-sessions", "mixing-mastering", "gig-bookings", "merch-sales",
+    # Book club template
+    "current-book", "book-recommendations", "reading-schedule", "discussion",
+    "quotes-passages", "author-info", "genre-specific", "book-reviews",
+    # Podcast template
+    "episode-ideas", "guest-suggestions", "recording-schedule", "show-notes",
+    "audio-editing", "publishing", "promotion", "listener-feedback",
+    # E-sports template
+    "team-roster", "practice-schedule", "match-schedule", "vod-review",
+    "strategy-discussion", "scrims", "tournaments", "team-announcements"
 ]
 
 def is_likely_bot_created(channel, check_patterns=True):
@@ -547,12 +590,20 @@ async def add_channel(ctx, channel_name: str = None):
 
 @bot.command(name="rescale")
 @commands.has_permissions(administrator=True)
-async def rescale_server(ctx, template: str, new_scale: int):
+async def rescale_server(ctx, template: str = None, new_scale: int = None):
     """
     Change the scale of your server (add more channels/roles)
     Usage: !rescale <template> <new-scale>
+    Example: !rescale small-business 75
     Shows preview of what will be added
     """
+    if template is None or new_scale is None:
+        await ctx.send("❌ **Usage:** `!rescale <template> <scale>`\n\n"
+                      "**Examples:**\n"
+                      "• `!rescale small-business 75` - Preview scaling to 75%\n"
+                      "• `!rescale school 100` - Preview scaling to 100%\n\n"
+                      "**Available templates:** Use `!templates` to see all options")
+        return
     if ctx.guild is None:
         await ctx.send("❌ This command can only be used in a server, not in DMs.")
         return
@@ -777,6 +828,56 @@ async def remove_channel(ctx, channel_name: str):
     except Exception as e:
         await ctx.send(f"❌ Failed to delete channel: {str(e)}")
         logger.error(f"Failed to delete channel {channel_name}: {e}")
+
+
+@bot.command(name="check-detection")
+@commands.has_permissions(administrator=True)
+async def check_detection(ctx):
+    """
+    Check which channels will be detected as bot-created
+    Usage: !check-detection
+    Shows what cleanup will delete
+    """
+    if ctx.guild is None:
+        await ctx.send("❌ This command can only be used in a server, not in DMs.")
+        return
+    
+    bot_channels = []
+    manual_channels = []
+    
+    for channel in ctx.guild.channels:
+        is_bot, reason = is_likely_bot_created(channel, check_patterns=True)
+        if is_bot:
+            bot_channels.append(f"✅ `{channel.name}` - {reason}")
+        else:
+            manual_channels.append(f"❌ `{channel.name}` - {reason}")
+    
+    msg = "# 🔍 Channel Detection Report\n\n"
+    msg += f"## Bot-Created Channels ({len(bot_channels)})\n"
+    msg += "These will be deleted by `!cleanup`:\n"
+    if bot_channels:
+        msg += "\n".join(bot_channels[:20])  # Limit to 20
+        if len(bot_channels) > 20:
+            msg += f"\n... and {len(bot_channels) - 20} more"
+    else:
+        msg += "None detected!"
+    
+    msg += f"\n\n## Manual Channels ({len(manual_channels)})\n"
+    msg += "These will be preserved:\n"
+    if manual_channels:
+        msg += "\n".join(manual_channels[:20])  # Limit to 20
+        if len(manual_channels) > 20:
+            msg += f"\n... and {len(manual_channels) - 20} more"
+    else:
+        msg += "None found!"
+    
+    # Split message if too long
+    if len(msg) > 1900:
+        parts = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
+        for part in parts:
+            await ctx.send(part)
+    else:
+        await ctx.send(msg)
 
 
 @bot.command(name="migrate-markers")
