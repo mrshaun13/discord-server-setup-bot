@@ -48,6 +48,9 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Bot marker for tracking created content
+BOT_MARKER = "[DSBOT]"  # Discord Server Bot marker
+
 
 class ServerSetup:
     """Handles the server setup process"""
@@ -90,15 +93,14 @@ class ServerSetup:
                 for perm in role_config.get("permissions", []):
                     setattr(permissions, perm, True)
                 
-                # Create the role
+                # Create the role with bot marker in name temporarily, then rename
                 role = await self.guild.create_role(
-                    name=role_config["name"],
+                    name=f"{role_config['name']} {BOT_MARKER}",
                     color=discord.Color(role_config.get("color", 0)),
-                    permissions=permissions,
                     hoist=role_config.get("hoist", False),
-                    mentionable=role_config.get("mentionable", False),
+                    mentionable=role_config.get("mentionable", True),
+                    permissions=permissions
                 )
-                
                 self.created_roles[role_config["name"]] = role
                 logger.info(f"Created role: {role_config['name']}")
                 
@@ -157,11 +159,13 @@ class ServerSetup:
                         if channel_config["type"] == "voice":
                             channel = await category.create_voice_channel(
                                 name=channel_config["name"],
+                                topic=f"{BOT_MARKER} {channel_config.get('topic', 'Created by setup bot')}"
                             )
                         else:
+                            original_topic = channel_config.get("topic", "")
                             channel = await category.create_text_channel(
                                 name=channel_config["name"],
-                                topic=channel_config.get("topic", ""),
+                                topic=f"{BOT_MARKER} {original_topic}" if original_topic else BOT_MARKER,
                             )
                         
                         self.created_channels[channel_config["name"]] = channel
@@ -593,17 +597,56 @@ async def shutdown_bot(ctx):
 
 @bot.command(name="cleanup")
 @commands.has_permissions(administrator=True)
-async def cleanup_server(ctx):
+async def cleanup_server(ctx, channel_name: str = None):
     """
-    Remove all channels and roles created by this bot
-    WARNING: This will delete everything! Use with caution.
+    Remove channels and roles created by this bot
+    Usage: !cleanup [channel-name]
+    
+    Without channel name: Removes ALL bot-created content (requires confirmation)
+    With channel name: Removes specific channel (no confirmation needed)
+    
+    Only deletes items marked with [DSBOT] - manually created channels are safe!
     """
     # Check if command is used in a server (not DM)
     if ctx.guild is None:
         await ctx.send("❌ This command can only be used in a server, not in DMs.")
         return
     
+    # Single channel cleanup (no confirmation needed)
+    if channel_name:
+        channel = discord.utils.get(ctx.guild.channels, name=channel_name)
+        
+        if not channel:
+            await ctx.send(f"❌ Channel `{channel_name}` not found.")
+            return
+        
+        # Check if it's a bot-created channel
+        is_bot_channel = False
+        if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
+            is_bot_channel = True
+        elif isinstance(channel, discord.CategoryChannel):
+            # Check if category has bot-created channels
+            bot_channels_in_cat = [ch for ch in channel.channels 
+                                   if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
+            is_bot_channel = len(bot_channels_in_cat) > 0
+        
+        if not is_bot_channel:
+            await ctx.send(f"⚠️ Channel `{channel_name}` was not created by this bot.\n"
+                          f"Use `!remove-channel {channel_name}` to force delete it.")
+            return
+        
+        try:
+            await channel.delete()
+            await ctx.send(f"✅ Deleted channel: `{channel_name}`")
+            logger.info(f"Channel {channel_name} deleted by {ctx.author}")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to delete channel: {str(e)}")
+            logger.error(f"Failed to delete channel {channel_name}: {e}")
+        return
+    
+    # Full cleanup (requires confirmation)
     await ctx.send("⚠️ **WARNING:** This will delete ALL channels and roles created by the setup bot!\n"
+                   "Manually created channels will NOT be affected.\n\n"
                    "Type `!confirm_cleanup` within 30 seconds to proceed.")
     
     def check(m):
@@ -616,15 +659,31 @@ async def cleanup_server(ctx):
         return
     
     await ctx.send("🗑️ Starting cleanup... This may take a while.")
-    logger.info(f"Cleanup initiated by {ctx.author}")
+    logger.info(f"Full cleanup initiated by {ctx.author}")
     
     deleted_channels = 0
     deleted_categories = 0
     deleted_roles = 0
+    skipped_channels = 0
+    skipped_roles = 0
     
-    # Delete channels
+    # Delete bot-created channels only
     for channel in ctx.guild.channels:
-        if channel != ctx.channel:  # Don't delete the channel we're in
+        if channel == ctx.channel:  # Don't delete the channel we're in
+            continue
+        
+        # Check if channel was created by bot
+        is_bot_created = False
+        if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
+            is_bot_created = True
+        elif isinstance(channel, discord.CategoryChannel):
+            # Delete empty categories or those with only bot channels
+            bot_channels = [ch for ch in channel.channels 
+                           if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
+            if len(bot_channels) == len(channel.channels) and len(channel.channels) > 0:
+                is_bot_created = True
+        
+        if is_bot_created:
             try:
                 await channel.delete()
                 if isinstance(channel, discord.CategoryChannel):
@@ -634,20 +693,61 @@ async def cleanup_server(ctx):
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.error(f"Failed to delete channel {channel.name}: {e}")
+        else:
+            skipped_channels += 1
     
-    # Delete roles (except @everyone and bot roles)
+    # Delete bot-created roles only (those with BOT_MARKER)
     for role in ctx.guild.roles:
-        if role.name not in ["@everyone"] and not role.managed:
+        if role.name == "@everyone" or role.managed:
+            continue
+        
+        if BOT_MARKER in role.name:
             try:
                 await role.delete()
                 deleted_roles += 1
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.error(f"Failed to delete role {role.name}: {e}")
+        else:
+            skipped_roles += 1
     
     await ctx.send(f"✅ Cleanup complete!\n"
-                   f"Deleted {deleted_channels} channels, {deleted_categories} categories, and {deleted_roles} roles.")
-    logger.info(f"Cleanup completed: {deleted_channels} channels, {deleted_categories} categories, {deleted_roles} roles")
+                   f"**Deleted:** {deleted_channels} channels, {deleted_categories} categories, {deleted_roles} roles\n"
+                   f"**Preserved:** {skipped_channels} manually-created channels, {skipped_roles} manually-created roles")
+    logger.info(f"Cleanup completed: Deleted {deleted_channels} channels, {deleted_categories} categories, {deleted_roles} roles. "
+                f"Skipped {skipped_channels} channels, {skipped_roles} roles")
+
+
+@bot.command(name="remove-channel")
+@commands.has_permissions(administrator=True)
+async def remove_channel(ctx, channel_name: str):
+    """
+    Force remove a specific channel (bot-created or manual)
+    Usage: !remove-channel <channel-name>
+    No confirmation required - use with caution!
+    """
+    if ctx.guild is None:
+        await ctx.send("❌ This command can only be used in a server, not in DMs.")
+        return
+    
+    channel = discord.utils.get(ctx.guild.channels, name=channel_name)
+    
+    if not channel:
+        await ctx.send(f"❌ Channel `{channel_name}` not found.")
+        return
+    
+    if channel == ctx.channel:
+        await ctx.send(f"❌ Cannot delete the channel you're currently in!")
+        return
+    
+    try:
+        channel_type = "category" if isinstance(channel, discord.CategoryChannel) else "channel"
+        await channel.delete()
+        await ctx.send(f"✅ Deleted {channel_type}: `{channel_name}`")
+        logger.info(f"Channel {channel_name} force-deleted by {ctx.author}")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to delete channel: {str(e)}")
+        logger.error(f"Failed to delete channel {channel_name}: {e}")
 
 
 @bot.event

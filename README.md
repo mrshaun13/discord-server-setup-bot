@@ -1,14 +1,39 @@
 # 🤖 Discord Server Setup Bot
 
-A one-time setup bot that automatically configures your Discord server with pre-built templates for different use cases.
+A one-time setup bot that automatically configures your Discord server with **13 pre-built templates** and **percentage-based scaling** for different use cases.
 
 **This bot is NOT stateful** - it only runs once to set up your server, then you can shut it down. No need to keep it running!
 
+## ✨ Key Features
+
+- 🎯 **13 Ready-to-Use Templates** - AI, AWS, ITIL, School, Business, Gaming, and more
+- 📊 **Percentage-Based Scaling** - Scale from 1% (minimal) to 100% (full enterprise)
+- 🔍 **Dry-Run Preview** - See what will be created before applying
+- 🛡️ **Safe Cleanup** - Only deletes bot-created content (marked with `[DSBOT]`)
+- 🔄 **Incremental Scaling** - Start small, scale up as you grow
+- 📝 **Channel Management** - Add/remove individual channels easily
+- 🎨 **Fully Customizable** - Modify templates or create your own
+
 ## 📦 Available Templates
 
+### Core Templates
 - **`ai-dev`** - AI Development Community (default)
-- **`aws-chatops`** - AWS Infrastructure & ChatOps
+- **`aws-chatops`** - AWS Infrastructure & ChatOps  
 - **`itil-ops`** - ITIL Business Operations
+
+### Community Templates
+- **`school`** - School/Education Server (7 categories, 30 channels)
+- **`small-business`** - Small Business Operations (7 categories, 21 channels)
+- **`gaming-hangout`** - Gaming & Hangout Space (6 categories, 16 channels)
+- **`content-creator`** - Content Creator/Streamer Community
+- **`nonprofit`** - Non-Profit Organization & Volunteers
+- **`fitness`** - Fitness & Wellness Community
+- **`music-band`** - Music & Band Community
+- **`book-club`** - Book Club & Reading Groups
+- **`podcast`** - Podcast Community
+- **`esports`** - E-Sports Team & Competitive Gaming
+
+**Total: 13 templates** | Use `!templates` to see all options
 
 ---
 
@@ -201,15 +226,22 @@ Once the bot is running and online:
    !templates
    ```
 
-2. **Choose and run setup:**
+2. **Preview before setup (optional):**
    ```
-   !setup ai-dev        # AI Development (default)
-   !setup aws-chatops   # AWS ChatOps
-   !setup itil-ops      # ITIL Operations
+   !preview school 50        # See what will be created
+   !preview gaming-hangout   # Preview at 100%
    ```
 
-3. Wait 2-5 minutes for the setup to complete
-4. Review the created channels and roles
+3. **Choose and run setup:**
+   ```
+   !setup ai-dev             # AI Development (default) at 100%
+   !setup school 50          # School template at 50% scale
+   !setup gaming-hangout 75  # Gaming at 75% scale
+   !setup aws-chatops        # AWS ChatOps at 100%
+   ```
+
+4. Wait 2-5 minutes for the setup to complete
+5. Review the created channels and roles (all marked with `[DSBOT]`)
 5. Type `!shutdown` to stop the bot
 
 **That's it!** Your server is now fully configured. You can shut down the bot - it's no longer needed.
@@ -534,22 +566,29 @@ All commands require **Administrator** permissions.
 
 ---
 
-### `!setup [template]`
+### `!setup [template] [scale]`
 **Description:** Run the complete server setup process with a template
 
 **Usage:**
 ```
-!setup              # Uses default (ai-dev)
-!setup ai-dev       # AI Development Community
-!setup aws-chatops  # AWS ChatOps
-!setup itil-ops     # ITIL Operations
+!setup                    # Uses default (ai-dev) at 100%
+!setup ai-dev             # AI Development Community at 100%
+!setup school 50          # School template at 50% scale
+!setup gaming-hangout 75  # Gaming template at 75% scale
 ```
+
+**Scale Parameter (1-100%):**
+- `1-25%`: Minimal - Essential channels only
+- `26-50%`: Basic - Core functionality
+- `51-75%`: Standard - Most features
+- `76-100%`: Full - Complete enterprise setup
 
 **What it does:**
 1. Creates all roles from template
 2. Creates all categories and channels
 3. Configures permissions
 4. Posts welcome messages, rules, and resources
+5. Tags all created content with `[DSBOT]` marker
 
 **Duration:** 2-5 minutes
 
@@ -587,20 +626,69 @@ All commands require **Administrator** permissions.
 
 ---
 
-### `!cleanup`
-**Description:** **DANGER!** Remove all channels and roles created by the bot
+### `!preview [template] [scale]`
+**Description:** Preview what a template will create (dry-run, no changes made)
 
 **Usage:**
 ```
-!cleanup
+!preview school 50        # Preview school template at 50%
+!preview gaming-hangout   # Preview at 100%
 ```
 
-Then confirm with:
+**Shows:**
+- Full structure breakdown
+- All channels and categories
+- All roles
+- On existing servers: Shows diff (what will be added)
+
+---
+
+### `!rescale [template] [scale]`
+**Description:** Preview what will be added when scaling up
+
+**Usage:**
 ```
-!confirm_cleanup
+!rescale school 100       # After setup at 60%, see what 100% adds
 ```
 
-**Warning:** This will delete EVERYTHING. Use only if you want to start over.
+**Shows:**
+- Current server state
+- What will be added (new categories, channels, roles)
+- Detailed breakdown
+
+---
+
+### `!cleanup [channel-name]`
+**Description:** Remove bot-created channels and roles
+
+**Usage:**
+```
+!cleanup                  # Remove ALL bot-created content (requires confirmation)
+!cleanup general-chat     # Remove specific channel (no confirmation)
+```
+
+**Safety Features:**
+- Only deletes items marked with `[DSBOT]`
+- Manually created channels are SAFE
+- Full cleanup requires `!confirm_cleanup` confirmation
+- Single channel cleanup is instant (no confirmation)
+
+**What gets deleted:**
+- Channels/categories with `[DSBOT]` in topic
+- Roles with `[DSBOT]` in name
+- Manually created content is preserved
+
+---
+
+### `!remove-channel [channel-name]`
+**Description:** Force remove ANY channel (bot-created or manual)
+
+**Usage:**
+```
+!remove-channel old-chat  # Delete any channel
+```
+
+**Warning:** No confirmation required. Use with caution!
 
 ---
 
