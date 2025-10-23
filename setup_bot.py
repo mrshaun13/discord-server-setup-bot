@@ -51,6 +51,50 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Bot marker for tracking created content
 BOT_MARKER = "[DSBOT]"  # Discord Server Bot marker
 
+# Known bot-created channel patterns (for legacy detection)
+# These are common patterns from templates that help identify bot-created channels
+BOT_CHANNEL_PATTERNS = [
+    "welcome", "rules", "announcements", "resources", "roles",
+    "general", "introductions", "off-topic", "showcase",
+    "ai-news", "research-papers", "ethics-safety", "industry-trends",
+    "general-dev", "llm-development", "ml-engineering", "computer-vision",
+    "openai-api", "anthropic-claude", "local-models",
+    "image-generation", "video-audio", "prompt-engineering",
+    "beginner-questions", "tutorials-guides", "study-group",
+    "hackathons-events", "job-opportunities", "networking",
+    "aws-alerts", "cloudwatch", "cost-optimization",
+    "incident-management", "change-management", "problem-management",
+    "homework-help", "general-academic", "mathematics", "science"
+]
+
+def is_likely_bot_created(channel, check_patterns=True):
+    """
+    Check if a channel was likely created by the bot
+    
+    Args:
+        channel: Discord channel object
+        check_patterns: If True, also check against known patterns (for legacy support)
+    
+    Returns:
+        tuple: (is_bot_created, reason)
+    """
+    # Check for explicit marker (new system)
+    if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
+        return (True, "has [DSBOT] marker")
+    
+    # For categories, check if they contain bot-created channels
+    if isinstance(channel, discord.CategoryChannel):
+        bot_channels = [ch for ch in channel.channels 
+                       if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
+        if len(bot_channels) > 0:
+            return (True, "contains bot-marked channels")
+    
+    # Legacy detection: Check against known patterns (for pre-existing setups)
+    if check_patterns and channel.name in BOT_CHANNEL_PATTERNS:
+        return (True, f"matches known pattern '{channel.name}'")
+    
+    return (False, "no markers or patterns found")
+
 
 class ServerSetup:
     """Handles the server setup process"""
@@ -620,15 +664,8 @@ async def cleanup_server(ctx, channel_name: str = None):
             await ctx.send(f"❌ Channel `{channel_name}` not found.")
             return
         
-        # Check if it's a bot-created channel
-        is_bot_channel = False
-        if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
-            is_bot_channel = True
-        elif isinstance(channel, discord.CategoryChannel):
-            # Check if category has bot-created channels
-            bot_channels_in_cat = [ch for ch in channel.channels 
-                                   if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
-            is_bot_channel = len(bot_channels_in_cat) > 0
+        # Check if it's a bot-created channel (with legacy support)
+        is_bot_channel, reason = is_likely_bot_created(channel, check_patterns=True)
         
         if not is_bot_channel:
             await ctx.send(f"⚠️ Channel `{channel_name}` was not created by this bot.\n"
@@ -667,21 +704,13 @@ async def cleanup_server(ctx, channel_name: str = None):
     skipped_channels = 0
     skipped_roles = 0
     
-    # Delete bot-created channels only
+    # Delete bot-created channels only (with legacy support)
     for channel in ctx.guild.channels:
         if channel == ctx.channel:  # Don't delete the channel we're in
             continue
         
-        # Check if channel was created by bot
-        is_bot_created = False
-        if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
-            is_bot_created = True
-        elif isinstance(channel, discord.CategoryChannel):
-            # Delete empty categories or those with only bot channels
-            bot_channels = [ch for ch in channel.channels 
-                           if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
-            if len(bot_channels) == len(channel.channels) and len(channel.channels) > 0:
-                is_bot_created = True
+        # Check if channel was created by bot (includes legacy detection)
+        is_bot_created, reason = is_likely_bot_created(channel, check_patterns=True)
         
         if is_bot_created:
             try:
@@ -748,6 +777,102 @@ async def remove_channel(ctx, channel_name: str):
     except Exception as e:
         await ctx.send(f"❌ Failed to delete channel: {str(e)}")
         logger.error(f"Failed to delete channel {channel_name}: {e}")
+
+
+@bot.command(name="migrate-markers")
+@commands.has_permissions(administrator=True)
+async def migrate_markers(ctx):
+    """
+    Add [DSBOT] markers to existing bot-created channels
+    Usage: !migrate-markers
+    
+    This helps the bot recognize channels created before the tracking system was added.
+    Uses pattern matching to identify likely bot-created channels.
+    """
+    if ctx.guild is None:
+        await ctx.send("❌ This command can only be used in a server, not in DMs.")
+        return
+    
+    await ctx.send("🔄 **Migrating existing channels to new tracking system...**\n"
+                   "This will add `[DSBOT]` markers to channels that match known bot patterns.\n\n"
+                   "Type `!confirm_migrate` within 30 seconds to proceed.")
+    
+    def check(m):
+        return m.author == ctx.author and m.content == "!confirm_migrate" and m.channel == ctx.channel
+    
+    try:
+        await bot.wait_for('message', check=check, timeout=30.0)
+    except asyncio.TimeoutError:
+        await ctx.send("❌ Migration cancelled - confirmation not received.")
+        return
+    
+    await ctx.send("🔄 Starting migration...")
+    logger.info(f"Marker migration initiated by {ctx.author}")
+    
+    migrated_channels = 0
+    migrated_roles = 0
+    skipped_channels = 0
+    skipped_roles = 0
+    
+    # Migrate channels
+    for channel in ctx.guild.channels:
+        # Skip if already has marker
+        if hasattr(channel, 'topic') and channel.topic and BOT_MARKER in channel.topic:
+            skipped_channels += 1
+            continue
+        
+        # Check if it matches known patterns
+        if channel.name in BOT_CHANNEL_PATTERNS:
+            try:
+                if isinstance(channel, discord.TextChannel):
+                    # Add marker to topic
+                    original_topic = channel.topic or ""
+                    new_topic = f"{BOT_MARKER} {original_topic}" if original_topic else BOT_MARKER
+                    await channel.edit(topic=new_topic)
+                    migrated_channels += 1
+                    logger.info(f"Migrated channel: {channel.name}")
+                elif isinstance(channel, discord.VoiceChannel):
+                    # Voice channels can't have topics in all Discord versions, skip
+                    skipped_channels += 1
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Failed to migrate channel {channel.name}: {e}")
+                skipped_channels += 1
+        else:
+            skipped_channels += 1
+    
+    # Migrate roles - look for common bot role patterns
+    bot_role_patterns = ["Admin", "Moderator", "Member", "Developer", "Researcher", 
+                         "Principal", "Teacher", "Student", "Manager", "Employee"]
+    
+    for role in ctx.guild.roles:
+        if role.name == "@everyone" or role.managed:
+            continue
+        
+        # Skip if already has marker
+        if BOT_MARKER in role.name:
+            skipped_roles += 1
+            continue
+        
+        # Check if it matches known patterns
+        if any(pattern in role.name for pattern in bot_role_patterns):
+            try:
+                new_name = f"{role.name} {BOT_MARKER}"
+                await role.edit(name=new_name)
+                migrated_roles += 1
+                logger.info(f"Migrated role: {role.name}")
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Failed to migrate role {role.name}: {e}")
+                skipped_roles += 1
+        else:
+            skipped_roles += 1
+    
+    await ctx.send(f"✅ Migration complete!\n"
+                   f"**Migrated:** {migrated_channels} channels, {migrated_roles} roles\n"
+                   f"**Skipped:** {skipped_channels} channels, {skipped_roles} roles\n\n"
+                   f"Migrated items now have `[DSBOT]` markers and will be recognized by `!cleanup`.")
+    logger.info(f"Migration completed: {migrated_channels} channels, {migrated_roles} roles migrated")
 
 
 @bot.event
