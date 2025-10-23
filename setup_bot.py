@@ -581,24 +581,153 @@ async def preview_template(ctx, template: str = "ai-dev", scale: int = 100):
 
 @bot.command(name="add-channel")
 @commands.has_permissions(administrator=True)
-async def add_channel(ctx, channel_name: str = None):
+async def add_channel(ctx, channel_type: str = None, channel_name: str = None, category_name: str = None):
     """
-    Add a channel from the template that wasn't included in your scale
-    Usage: !add-channel <channel-name>
-    Lists available channels if no name provided
+    Add a custom channel to your server with bot tracking
+    Usage: !add-channel <type> <name> [category]
+    
+    Types: text, voice
+    Examples:
+      !add-channel text project-updates
+      !add-channel voice Team Room "💼 OPERATIONS"
+      !add-channel text custom-chat
     """
     if ctx.guild is None:
         await ctx.send("❌ This command can only be used in a server, not in DMs.")
         return
     
-    # Try to detect which template was used (store in channel topic or description)
-    # For now, we'll ask the user to specify
-    await ctx.send("⚠️ **Feature Coming Soon**\n\n"
-                   "To add channels manually:\n"
-                   "1. Use `!preview <template> 100` to see all available channels\n"
-                   "2. Create channels manually in Discord\n"
-                   "3. Or run `!setup <template> <higher-scale>` to add more channels\n\n"
-                   "Example: If you used `!setup school 50`, run `!setup school 75` to add more.")
+    # Show usage if missing arguments
+    if not channel_type or not channel_name:
+        await ctx.send("📝 **Add Channel Command**\n\n"
+                      "**Usage:** `!add-channel <type> <name> [category]`\n\n"
+                      "**Types:**\n"
+                      "• `text` - Text channel\n"
+                      "• `voice` - Voice channel\n\n"
+                      "**Examples:**\n"
+                      "```\n"
+                      "!add-channel text project-updates\n"
+                      "!add-channel voice Team Room\n"
+                      '!add-channel text announcements "📢 COMPANY"\n'
+                      "```\n\n"
+                      "**Note:** Channels created with this command:\n"
+                      "• Will be marked with `[DSBOT]` for tracking\n"
+                      "• Can be removed with `!cleanup <channel-name>`\n"
+                      "• Will be deleted by full `!cleanup`")
+        return
+    
+    # Validate channel type
+    if channel_type.lower() not in ['text', 'voice']:
+        await ctx.send(f"❌ Invalid channel type: `{channel_type}`\n"
+                      "Valid types: `text`, `voice`")
+        return
+    
+    # Check if channel already exists
+    existing = discord.utils.get(ctx.guild.channels, name=channel_name)
+    if existing:
+        await ctx.send(f"❌ Channel `{channel_name}` already exists!")
+        return
+    
+    # Find category if specified
+    category = None
+    if category_name:
+        category = discord.utils.get(ctx.guild.categories, name=category_name)
+        if not category:
+            await ctx.send(f"⚠️ Category `{category_name}` not found.\n"
+                          f"Creating channel without category...")
+    
+    try:
+        # Create the channel with bot marker
+        if channel_type.lower() == 'voice':
+            channel = await ctx.guild.create_voice_channel(
+                name=channel_name,
+                category=category,
+                reason=f"Created by {ctx.author} via !add-channel"
+            )
+            # Try to set topic (not all Discord versions support this for voice)
+            try:
+                await channel.edit(topic=f"{BOT_MARKER} Custom channel created via bot")
+            except:
+                pass  # Voice channels may not support topics
+        else:
+            channel = await ctx.guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                topic=f"{BOT_MARKER} Custom channel created via bot",
+                reason=f"Created by {ctx.author} via !add-channel"
+            )
+        
+        category_info = f" in category `{category_name}`" if category else ""
+        await ctx.send(f"✅ Created {channel_type} channel: {channel.mention}{category_info}\n\n"
+                      f"**Channel is tracked** - Can be removed with:\n"
+                      f"• `!cleanup {channel_name}` - Remove this channel\n"
+                      f"• `!cleanup` - Remove all bot-created channels")
+        
+        logger.info(f"Channel {channel_name} ({channel_type}) created by {ctx.author} in {ctx.guild.name}")
+        
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to create channels!\n"
+                      "Make sure the bot has `Manage Channels` permission.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to create channel: {str(e)}")
+        logger.error(f"Failed to create channel {channel_name}: {e}")
+
+
+@bot.command(name="add-category")
+@commands.has_permissions(administrator=True)
+async def add_category(ctx, *, category_name: str = None):
+    """
+    Add a custom category to your server
+    Usage: !add-category <name>
+    
+    Example:
+      !add-category 📁 PROJECTS
+      !add-category Custom Category
+    """
+    if ctx.guild is None:
+        await ctx.send("❌ This command can only be used in a server, not in DMs.")
+        return
+    
+    if not category_name:
+        await ctx.send("📝 **Add Category Command**\n\n"
+                      "**Usage:** `!add-category <name>`\n\n"
+                      "**Examples:**\n"
+                      "```\n"
+                      "!add-category 📁 PROJECTS\n"
+                      "!add-category Custom Category\n"
+                      "!add-category 🎮 GAMING\n"
+                      "```\n\n"
+                      "**After creating a category:**\n"
+                      "Use `!add-channel` to add channels to it:\n"
+                      '`!add-channel text my-channel "📁 PROJECTS"`')
+        return
+    
+    # Check if category already exists
+    existing = discord.utils.get(ctx.guild.categories, name=category_name)
+    if existing:
+        await ctx.send(f"❌ Category `{category_name}` already exists!")
+        return
+    
+    try:
+        category = await ctx.guild.create_category(
+            name=category_name,
+            reason=f"Created by {ctx.author} via !add-category"
+        )
+        
+        await ctx.send(f"✅ Created category: **{category_name}**\n\n"
+                      f"**Add channels to it:**\n"
+                      f'`!add-channel text channel-name "{category_name}"`\n'
+                      f'`!add-channel voice Voice Room "{category_name}"`\n\n'
+                      f"**Note:** This category is NOT tracked by the bot.\n"
+                      f"Channels you add to it will be tracked if created with `!add-channel`.")
+        
+        logger.info(f"Category {category_name} created by {ctx.author} in {ctx.guild.name}")
+        
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to create categories!\n"
+                      "Make sure the bot has `Manage Channels` permission.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to create category: {str(e)}")
+        logger.error(f"Failed to create category {category_name}: {e}")
 
 
 @bot.command(name="rescale")

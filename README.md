@@ -692,6 +692,41 @@ All commands require **Administrator** permissions.
 
 ---
 
+### `!add-channel [type] [name] [category]`
+**Description:** Add a custom channel with bot tracking
+
+**Usage:**
+```
+!add-channel text project-updates
+!add-channel voice Team Room
+!add-channel text announcements "📢 COMPANY"
+```
+
+**Types:**
+- `text` - Text channel
+- `voice` - Voice channel
+
+**Features:**
+- Automatically marked with `[DSBOT]` for tracking
+- Can be removed with `!cleanup [channel-name]`
+- Optionally placed in a category
+- Shows helpful usage if arguments missing
+
+---
+
+### `!add-category [name]`
+**Description:** Add a custom category to your server
+
+**Usage:**
+```
+!add-category 📁 PROJECTS
+!add-category Custom Category
+```
+
+**Note:** Categories created this way are NOT tracked by the bot. However, channels you add to them with `!add-channel` will be tracked.
+
+---
+
 ### `!help`
 **Description:** Show all available commands
 

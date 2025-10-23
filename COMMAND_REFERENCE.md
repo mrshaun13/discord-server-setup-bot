@@ -70,6 +70,55 @@ Preview what will be added when scaling up
 
 ---
 
+## ➕ Channel Management
+
+### `!add-channel [type] [name] [category]`
+Add a custom channel with automatic bot tracking
+
+```bash
+!add-channel text project-updates          # Text channel
+!add-channel voice Team Room                # Voice channel
+!add-channel text announcements "📢 COMPANY"  # In specific category
+```
+
+**Types:**
+- `text` - Text channel
+- `voice` - Voice channel
+
+**Features:**
+- ✅ Automatically marked with `[DSBOT]`
+- ✅ Tracked by bot (can be cleaned up)
+- ✅ Optional category placement
+- ✅ Helpful usage message if arguments missing
+
+**Cleanup:**
+```bash
+!cleanup project-updates    # Remove this channel
+!cleanup                    # Remove all bot-created channels
+```
+
+---
+
+### `!add-category [name]`
+Add a custom category to organize channels
+
+```bash
+!add-category 📁 PROJECTS
+!add-category Custom Category
+!add-category 🎮 GAMING
+```
+
+**After creating:**
+```bash
+# Add channels to the category
+!add-channel text my-channel "📁 PROJECTS"
+!add-channel voice Voice Room "📁 PROJECTS"
+```
+
+**Note:** Categories themselves are NOT tracked, but channels added with `!add-channel` are tracked.
+
+---
+
 ## 🗑️ Cleanup & Management
 
 ### `!cleanup`
@@ -256,7 +305,27 @@ Show all available commands
 
 ---
 
-### Workflow 4: Migrate Pre-Existing Setup
+### Workflow 4: Add Custom Channels
+
+```bash
+# Step 1: Create a category
+!add-category 📁 PROJECTS
+
+# Step 2: Add channels to it
+!add-channel text project-alpha "📁 PROJECTS"
+!add-channel text project-beta "📁 PROJECTS"
+!add-channel voice Project Meetings "📁 PROJECTS"
+
+# Step 3: Verify
+!status
+
+# Step 4: Remove if needed
+!cleanup project-alpha
+```
+
+---
+
+### Workflow 5: Migrate Pre-Existing Setup
 
 ```bash
 # Step 1: Check detection
