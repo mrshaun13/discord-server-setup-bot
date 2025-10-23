@@ -127,10 +127,23 @@ def is_likely_bot_created(channel, check_patterns=True):
     
     # For categories, check if they contain bot-created channels
     if isinstance(channel, discord.CategoryChannel):
+        # First check for marked channels
         bot_channels = [ch for ch in channel.channels 
                        if hasattr(ch, 'topic') and ch.topic and BOT_MARKER in ch.topic]
         if len(bot_channels) > 0:
             return (True, "contains bot-marked channels")
+        
+        # Legacy: Check if category contains channels matching patterns
+        if check_patterns:
+            pattern_channels = [ch for ch in channel.channels if ch.name in BOT_CHANNEL_PATTERNS]
+            if len(pattern_channels) > 0:
+                return (True, f"contains {len(pattern_channels)} pattern-matched channels")
+            
+            # Also check if ALL channels in category match patterns (likely bot-created category)
+            if len(channel.channels) > 0:
+                all_match = all(ch.name in BOT_CHANNEL_PATTERNS for ch in channel.channels)
+                if all_match:
+                    return (True, "all channels match bot patterns")
     
     # Legacy detection: Check against known patterns (for pre-existing setups)
     if check_patterns and channel.name in BOT_CHANNEL_PATTERNS:
